@@ -1,0 +1,25 @@
+[gd_scene load_steps=4 format=3 uid="uid://befaabpgdgfas"]
+
+[ext_resource type="Script" path="res://marching_cube.gd" id="1_ntexv"]
+[ext_resource type="Script" path="res://Camera3D.gd" id="2_3mcdp"]
+
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_o8xqg"]
+frequency = 0.9574
+metadata/_preview_in_3d_space_ = true
+
+[node name="MarchingCube" type="Node3D"]
+script = ExtResource("1_ntexv")
+resolution = 30
+isolevel = 0.048
+noise = SubResource("FastNoiseLite_o8xqg")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 3.2384)
+script = ExtResource("2_3mcdp")
+
+[node name="SpotLight3D" type="SpotLight3D" parent="Camera3D"]
+spot_range = 50.0
+spot_angle = 33.0
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.566525, 0.604834, -0.559666, -0.702824, 0.709232, 0.0550332, 0.430219, 0.362169, 0.826889, 0, 0, 0)
