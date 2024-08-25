@@ -4,13 +4,11 @@
 [ext_resource type="Script" path="res://Camera3D.gd" id="2_3mcdp"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_o8xqg"]
-frequency = 0.9574
+frequency = 0.0278
 metadata/_preview_in_3d_space_ = true
 
 [node name="MarchingCube" type="Node3D"]
 script = ExtResource("1_ntexv")
-resolution = 30
-isolevel = 0.048
 noise = SubResource("FastNoiseLite_o8xqg")
 
 [node name="Camera3D" type="Camera3D" parent="."]
