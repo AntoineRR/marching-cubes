@@ -8,6 +8,16 @@ const resolution = 8   # To update this, also update the local size in the march
 
 var grid = []
 
+var rd: RenderingDevice
+var uniform_set: RID
+var pipeline: RID
+var counter_buffer: RID
+var counter_bytes_size: int
+var output_buffer: RID
+var output_bytes_size: int
+
+var mesh_instance: MeshInstance3D
+
 func sample_noise():
 	for x in workgroup_size * resolution + 1:
 		for y in workgroup_size * resolution + 1:
@@ -18,8 +28,8 @@ func sample_noise():
 					float(z)
 				))
 
-func create_triangles():
-	var rd = RenderingServer.create_local_rendering_device()
+func init_compute():
+	rd = RenderingServer.create_local_rendering_device()
 	var shader_file = load("res://marching_cubes.glsl")
 	var shader_spirv = shader_file.get_spirv()
 	var shader = rd.shader_create_from_spirv(shader_spirv)
@@ -39,9 +49,9 @@ func create_triangles():
 	const bytes_per_float : int = 4
 	const floats_per_triangle : int = 4 * 3
 	const bytes_per_triangle : int = floats_per_triangle * bytes_per_float
-	var max_bytes : int = bytes_per_triangle * max_triangles
+	output_bytes_size = bytes_per_triangle * max_triangles
 
-	var output_buffer = rd.storage_buffer_create(max_bytes)
+	output_buffer = rd.storage_buffer_create(output_bytes_size)
 
 	var output_uniform = RDUniform.new()
 	output_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
@@ -59,16 +69,22 @@ func create_triangles():
 
 	# Counter
 	var counter_bytes = PackedInt32Array([0]).to_byte_array()
-	var counter_buffer = rd.storage_buffer_create(counter_bytes.size(), counter_bytes)
+	counter_bytes_size = counter_bytes.size()
+	counter_buffer = rd.storage_buffer_create(counter_bytes_size, counter_bytes)
 
 	var counter_uniform = RDUniform.new()
 	counter_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
 	counter_uniform.binding = 3
 	counter_uniform.add_id(counter_buffer)
 
-	var uniform_set = rd.uniform_set_create([input_uniform, output_uniform, parameters_uniform, counter_uniform], shader, 0)
+	uniform_set = rd.uniform_set_create([input_uniform, output_uniform, parameters_uniform, counter_uniform], shader, 0)
 
-	var pipeline = rd.compute_pipeline_create(shader)
+	pipeline = rd.compute_pipeline_create(shader)
+
+func run_compute():
+	rd.buffer_update(counter_buffer, 0, counter_bytes_size, PackedFloat32Array([0]).to_byte_array())
+	rd.buffer_clear(output_buffer, 0, output_bytes_size)
+
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, pipeline)
 	rd.compute_list_bind_uniform_set(compute_list, uniform_set, 0)
@@ -99,12 +115,16 @@ func create_triangles():
 	st.generate_normals()
 	var mesh = st.commit()
 	
-	var mesh_instance = MeshInstance3D.new()
 	mesh_instance.mesh = mesh
-	add_child(mesh_instance)
 
 
 func _ready() -> void:
+	mesh_instance = MeshInstance3D.new()
+	add_child(mesh_instance)
 	randomize()
 	sample_noise()
-	create_triangles()
+	init_compute()
+
+
+func _process(_delta: float) -> void:
+	run_compute()
