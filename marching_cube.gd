@@ -17,7 +17,14 @@ var vertices_buffer: RID
 var normals_buffer: RID
 var output_bytes_size: int
 
+var vertices: PackedVector3Array
+var normals: PackedVector3Array
 var array_mesh: ArrayMesh
+
+var data_fetching_thread: Thread
+var mesh_creation_thread: Thread
+var mutex: Mutex
+var should_update_mesh: bool
 
 func sample_noise():
 	for x in workgroup_size * resolution + 1:
@@ -91,51 +98,62 @@ func init_compute():
 	pipeline = rd.compute_pipeline_create(shader)
 
 func run_compute():
+	while true:
+		var start = Time.get_ticks_msec()
+
+		rd.buffer_update(counter_buffer, 0, counter_bytes_size, PackedFloat32Array([0]).to_byte_array())
+		rd.buffer_clear(vertices_buffer, 0, output_bytes_size)
+
+		var compute_list = rd.compute_list_begin()
+		rd.compute_list_bind_compute_pipeline(compute_list, pipeline)
+		rd.compute_list_bind_uniform_set(compute_list, uniform_set, 0)
+		rd.compute_list_dispatch(compute_list, workgroup_size, workgroup_size, workgroup_size)
+		rd.compute_list_end()
+
+		rd.submit()
+		rd.sync()
+
+		var mid = Time.get_ticks_msec()
+		print("Compute shader: ", mid - start)
+
+		var raw_vertices_bytes = rd.buffer_get_data(vertices_buffer)
+		var raw_normals_bytes = rd.buffer_get_data(normals_buffer)
+		var output_counter = rd.buffer_get_data(counter_buffer).to_int32_array()[0]
+
+		print("num triangles to add:", output_counter)
+
+		var vertex_count = output_counter * 3
+
+		raw_vertices_bytes[0] = 36
+		raw_vertices_bytes[1] = 0
+		raw_vertices_bytes[2] = 0
+		raw_vertices_bytes[3] = 0
+		raw_vertices_bytes[4] = vertex_count & 0x000000FF
+		raw_vertices_bytes[5] = (vertex_count & 0x0000FF00) >> 8
+		raw_vertices_bytes[6] = (vertex_count & 0x00FF0000) >> 16
+		raw_vertices_bytes[7] = (vertex_count & 0xFF000000) >> 24
+
+		raw_normals_bytes[0] = 36
+		raw_normals_bytes[1] = 0
+		raw_normals_bytes[2] = 0
+		raw_normals_bytes[3] = 0
+		raw_normals_bytes[4] = vertex_count & 0x000000FF
+		raw_normals_bytes[5] = (vertex_count & 0x0000FF00) >> 8
+		raw_normals_bytes[6] = (vertex_count & 0x00FF0000) >> 16
+		raw_normals_bytes[7] = (vertex_count & 0xFF000000) >> 24
+
+		vertices = bytes_to_var(raw_vertices_bytes)
+		normals = bytes_to_var(raw_normals_bytes)
+
+		mutex.lock()
+		should_update_mesh = true
+		mutex.unlock()
+
+		print("Vertex/Normals treatment: ", Time.get_ticks_msec() - mid)
+		print("Total compute time: ", Time.get_ticks_msec() - start)
+
+func update_mesh():
 	var start = Time.get_ticks_msec()
-	rd.buffer_update(counter_buffer, 0, counter_bytes_size, PackedFloat32Array([0]).to_byte_array())
-	rd.buffer_clear(vertices_buffer, 0, output_bytes_size)
-
-	var compute_list = rd.compute_list_begin()
-	rd.compute_list_bind_compute_pipeline(compute_list, pipeline)
-	rd.compute_list_bind_uniform_set(compute_list, uniform_set, 0)
-	rd.compute_list_dispatch(compute_list, workgroup_size, workgroup_size, workgroup_size)
-	rd.compute_list_end()
-
-	rd.submit()
-	rd.sync()
-
-	var mid = Time.get_ticks_msec()
-	print("Compute shader: ", mid - start)
-
-	var vertices_bytes = rd.buffer_get_data(vertices_buffer)
-	var output_counter_bytes = rd.buffer_get_data(counter_buffer)
-	var output_counter = output_counter_bytes.to_int32_array()[0]
-	var normals_bytes = rd.buffer_get_data(normals_buffer)
-
-	print("num triangles to add:", output_counter)
-
-	var vertex_count = output_counter * 3
-
-	vertices_bytes[0] = 36
-	vertices_bytes[1] = 0
-	vertices_bytes[2] = 0
-	vertices_bytes[3] = 0
-	vertices_bytes[4] = vertex_count & 0x000000FF
-	vertices_bytes[5] = (vertex_count & 0x0000FF00) >> 8
-	vertices_bytes[6] = (vertex_count & 0x00FF0000) >> 16
-	vertices_bytes[7] = (vertex_count & 0xFF000000) >> 24
-
-	normals_bytes[0] = 36
-	normals_bytes[1] = 0
-	normals_bytes[2] = 0
-	normals_bytes[3] = 0
-	normals_bytes[4] = vertex_count & 0x000000FF
-	normals_bytes[5] = (vertex_count & 0x0000FF00) >> 8
-	normals_bytes[6] = (vertex_count & 0x00FF0000) >> 16
-	normals_bytes[7] = (vertex_count & 0xFF000000) >> 24
-
-	var vertices: PackedVector3Array = bytes_to_var(vertices_bytes)
-	var normals: PackedVector3Array = bytes_to_var(normals_bytes)
 
 	var mesh_data = []
 	mesh_data.resize(Mesh.ARRAY_MAX)
@@ -144,7 +162,7 @@ func run_compute():
 	array_mesh.clear_surfaces()
 	array_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, mesh_data)
 
-	print("Mesh creation: ", Time.get_ticks_msec() - mid)
+	print("Mesh creation: ", Time.get_ticks_msec() - start)
 
 
 func _ready() -> void:
@@ -154,6 +172,17 @@ func _ready() -> void:
 	sample_noise()
 	init_compute()
 
+	should_update_mesh = false
+	mutex = Mutex.new()
+	data_fetching_thread = Thread.new()
+	mesh_creation_thread = Thread.new()
+
+	data_fetching_thread.start(run_compute)
 
 func _process(_delta: float) -> void:
-	run_compute()
+	if should_update_mesh:
+		update_mesh()
+		
+		mutex.lock()
+		should_update_mesh = false
+		mutex.unlock()
