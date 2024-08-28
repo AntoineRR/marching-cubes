@@ -3,10 +3,25 @@
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
+// We create our own coordinate arrangement and do not use vec3
+// because it would be converted to vec4 when we get it in gd script
+// See https://github.com/godotengine/godot/issues/81511
 struct Triangle {
-    vec4 a;
-    vec4 b;
-    vec4 c;
+    float ax;
+    float ay;
+    float az;
+    float bx;
+    float by;
+    float bz;
+    float cx;
+    float cy;
+    float cz;
+};
+
+struct Normal {
+    float nx;
+    float ny;
+    float nz;
 };
 
 struct Parameters {
@@ -15,19 +30,29 @@ struct Parameters {
 };
 
 // This is the scalar field input
-layout(set = 0, binding = 0, std430) restrict buffer DensityFieldBuffer {
+layout(set = 0, binding = 0, std430) restrict readonly buffer DensityFieldBuffer {
     float data[];
 }
 density_field_buffer;
 
-// This is our output: coordinates of the triangles to draw
-layout(set = 0, binding = 1, std430) restrict buffer TrianglesBuffer {
+// This is our output: coordinates of the vertices of triangles to draw
+layout(set = 0, binding = 1, std430) restrict buffer TrianglesVertexBuffer {
+    int data_type;
+    int size;
     Triangle data[];
 }
-triangle_buffer;
+triangle_vertex_buffer;
+
+// This is our second output: normals for each vertices
+layout(set = 0, binding = 2, std430) restrict buffer TrianglesNormalBuffer {
+    int data_type;
+    int size;
+    Normal data[];
+}
+triangle_normal_buffer;
 
 // These are the parameters of our calculation
-layout(set = 0, binding = 2, std430) restrict buffer ParametersBuffer {
+layout(set = 0, binding = 3, std430) restrict readonly buffer ParametersBuffer {
     float resolution;
     float iso_level;
 }
@@ -35,7 +60,7 @@ parameters;
 
 // This is a counter that we will atomically increment to use as an index in our output buffer
 // If this is not atomic, we may experience weird behaviors because the shader runs in parallel
-layout(set = 0, binding = 3, std430) coherent buffer Counter {
+layout(set = 0, binding = 4, std430) coherent buffer Counter {
     uint counter;
 };
 
@@ -118,13 +143,33 @@ void main() {
     for (int i = 0; i < index_length; i += 3) {
         Triangle t;
         vec2 corners_a = corners_by_edge[triangles[offset + i]];
-        t.a.xyz = interpolate_between(cube_corners[int(corners_a.x)], cube_corners[int(corners_a.y)]) + world_pos;
+        vec3 a = interpolate_between(cube_corners[int(corners_a.x)], cube_corners[int(corners_a.y)]) + world_pos;
+        t.ax = a.x;
+        t.ay = a.y;
+        t.az = a.z;
         vec2 corners_b = corners_by_edge[triangles[offset + i + 1]];
-        t.b.xyz = interpolate_between(cube_corners[int(corners_b.x)], cube_corners[int(corners_b.y)]) + world_pos;
+        vec3 b = interpolate_between(cube_corners[int(corners_b.x)], cube_corners[int(corners_b.y)]) + world_pos;
+        t.bx = b.x;
+        t.by = b.y;
+        t.bz = b.z;
         vec2 corners_c = corners_by_edge[triangles[offset + i + 2]];
-        t.c.xyz = interpolate_between(cube_corners[int(corners_c.x)], cube_corners[int(corners_c.y)]) + world_pos;
+        vec3 c = interpolate_between(cube_corners[int(corners_c.x)], cube_corners[int(corners_c.y)]) + world_pos;
+        t.cx = c.x;
+        t.cy = c.y;
+        t.cz = c.z;
+
+        vec3 ab = b - a;
+		vec3 ac = c - a;
+        Normal n;
+		vec3 normal = -vec3(normalize(cross(ab, ac)));
+        n.nx = normal.x;
+        n.ny = normal.y;
+        n.nz = normal.z;
 
         uint index = atomicAdd(counter, 1u);
-        triangle_buffer.data[index] = t;
+        triangle_vertex_buffer.data[index] = t;
+        triangle_normal_buffer.data[index * 3] = n;
+        triangle_normal_buffer.data[index * 3 + 1] = n;
+        triangle_normal_buffer.data[index * 3 + 2] = n;
     }
 }

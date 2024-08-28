@@ -7,12 +7,13 @@
 frequency = 0.0278
 metadata/_preview_in_3d_space_ = true
 
-[node name="MarchingCube" type="Node3D"]
+[node name="MarchingCube" type="MeshInstance3D"]
 script = ExtResource("1_ntexv")
 noise = SubResource("FastNoiseLite_o8xqg")
 
 [node name="Camera3D" type="Camera3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 3.2384)
+current = true
 script = ExtResource("2_3mcdp")
 
 [node name="SpotLight3D" type="SpotLight3D" parent="Camera3D"]

@@ -1,4 +1,4 @@
-extends Node3D
+extends MeshInstance3D
 
 @export var workgroup_size: int = 8
 @export_range(-1.0, 1.0) var isolevel: float = 0.0
@@ -13,10 +13,11 @@ var uniform_set: RID
 var pipeline: RID
 var counter_buffer: RID
 var counter_bytes_size: int
-var output_buffer: RID
+var vertices_buffer: RID
+var normals_buffer: RID
 var output_bytes_size: int
 
-var mesh_instance: MeshInstance3D
+var array_mesh: ArrayMesh
 
 func sample_noise():
 	for x in workgroup_size * resolution + 1:
@@ -43,20 +44,28 @@ func init_compute():
 	input_uniform.binding = 0
 	input_uniform.add_id(input_buffer)
 
-	# Output
+	# Vertices
 	const max_tris_per_voxel : int = 5
 	var max_triangles : int = max_tris_per_voxel * int(pow(resolution * workgroup_size, 3))
 	const bytes_per_float : int = 4
-	const floats_per_triangle : int = 4 * 3
+	const floats_per_triangle : int = 3 * 3
 	const bytes_per_triangle : int = floats_per_triangle * bytes_per_float
-	output_bytes_size = bytes_per_triangle * max_triangles
+	output_bytes_size = 8 + bytes_per_triangle * max_triangles
 
-	output_buffer = rd.storage_buffer_create(output_bytes_size)
+	vertices_buffer = rd.storage_buffer_create(output_bytes_size)
 
-	var output_uniform = RDUniform.new()
-	output_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
-	output_uniform.binding = 1
-	output_uniform.add_id(output_buffer)
+	var vertices_uniform = RDUniform.new()
+	vertices_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	vertices_uniform.binding = 1
+	vertices_uniform.add_id(vertices_buffer)
+
+	# Normals
+	normals_buffer = rd.storage_buffer_create(output_bytes_size)
+
+	var normals_uniform = RDUniform.new()
+	normals_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	normals_uniform.binding = 2
+	normals_uniform.add_id(normals_buffer)
 
 	# Parameters
 	var parameters_bytes = PackedFloat32Array([resolution, isolevel]).to_byte_array()
@@ -64,7 +73,7 @@ func init_compute():
 
 	var parameters_uniform = RDUniform.new()
 	parameters_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
-	parameters_uniform.binding = 2
+	parameters_uniform.binding = 3
 	parameters_uniform.add_id(parameters_buffer)
 
 	# Counter
@@ -74,16 +83,17 @@ func init_compute():
 
 	var counter_uniform = RDUniform.new()
 	counter_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
-	counter_uniform.binding = 3
+	counter_uniform.binding = 4
 	counter_uniform.add_id(counter_buffer)
 
-	uniform_set = rd.uniform_set_create([input_uniform, output_uniform, parameters_uniform, counter_uniform], shader, 0)
+	uniform_set = rd.uniform_set_create([input_uniform, vertices_uniform, normals_uniform, parameters_uniform, counter_uniform], shader, 0)
 
 	pipeline = rd.compute_pipeline_create(shader)
 
 func run_compute():
+	var start = Time.get_ticks_msec()
 	rd.buffer_update(counter_buffer, 0, counter_bytes_size, PackedFloat32Array([0]).to_byte_array())
-	rd.buffer_clear(output_buffer, 0, output_bytes_size)
+	rd.buffer_clear(vertices_buffer, 0, output_bytes_size)
 
 	var compute_list = rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, pipeline)
@@ -94,33 +104,52 @@ func run_compute():
 	rd.submit()
 	rd.sync()
 
-	var output_bytes = rd.buffer_get_data(output_buffer)
-	var output = output_bytes.to_float32_array()
+	var mid = Time.get_ticks_msec()
+	print("Compute shader: ", mid - start)
+
+	var vertices_bytes = rd.buffer_get_data(vertices_buffer)
 	var output_counter_bytes = rd.buffer_get_data(counter_buffer)
 	var output_counter = output_counter_bytes.to_int32_array()[0]
+	var normals_bytes = rd.buffer_get_data(normals_buffer)
 
 	print("num triangles to add:", output_counter)
 
-	var st = SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var vertex_count = output_counter * 3
 
-	for i in output_counter:
-		var index = i * 12
-		var a = Vector3(output[index], output[index + 1], output[index + 2])
-		var b = Vector3(output[index + 4], output[index + 5], output[index + 6])
-		var c = Vector3(output[index + 8], output[index + 9], output[index + 10])
-		st.add_vertex(a)
-		st.add_vertex(b)
-		st.add_vertex(c)
-	st.generate_normals()
-	var mesh = st.commit()
-	
-	mesh_instance.mesh = mesh
+	vertices_bytes[0] = 36
+	vertices_bytes[1] = 0
+	vertices_bytes[2] = 0
+	vertices_bytes[3] = 0
+	vertices_bytes[4] = vertex_count & 0x000000FF
+	vertices_bytes[5] = (vertex_count & 0x0000FF00) >> 8
+	vertices_bytes[6] = (vertex_count & 0x00FF0000) >> 16
+	vertices_bytes[7] = (vertex_count & 0xFF000000) >> 24
+
+	normals_bytes[0] = 36
+	normals_bytes[1] = 0
+	normals_bytes[2] = 0
+	normals_bytes[3] = 0
+	normals_bytes[4] = vertex_count & 0x000000FF
+	normals_bytes[5] = (vertex_count & 0x0000FF00) >> 8
+	normals_bytes[6] = (vertex_count & 0x00FF0000) >> 16
+	normals_bytes[7] = (vertex_count & 0xFF000000) >> 24
+
+	var vertices: PackedVector3Array = bytes_to_var(vertices_bytes)
+	var normals: PackedVector3Array = bytes_to_var(normals_bytes)
+
+	var mesh_data = []
+	mesh_data.resize(Mesh.ARRAY_MAX)
+	mesh_data[Mesh.ARRAY_VERTEX] = vertices
+	mesh_data[Mesh.ARRAY_NORMAL] = normals
+	array_mesh.clear_surfaces()
+	array_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, mesh_data)
+
+	print("Mesh creation: ", Time.get_ticks_msec() - mid)
 
 
 func _ready() -> void:
-	mesh_instance = MeshInstance3D.new()
-	add_child(mesh_instance)
+	array_mesh = ArrayMesh.new()
+	mesh = array_mesh
 	randomize()
 	sample_noise()
 	init_compute()
