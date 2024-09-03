@@ -1,4 +1,4 @@
-[gd_scene load_steps=4 format=3 uid="uid://befaabpgdgfas"]
+[gd_scene load_steps=5 format=3 uid="uid://befaabpgdgfas"]
 
 [ext_resource type="Script" path="res://marching_cube.gd" id="1_ntexv"]
 [ext_resource type="Script" path="res://Camera3D.gd" id="2_3mcdp"]
@@ -6,6 +6,8 @@
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_o8xqg"]
 frequency = 0.0278
 metadata/_preview_in_3d_space_ = true
+
+[sub_resource type="ConcavePolygonShape3D" id="ConcavePolygonShape3D_ywu50"]
 
 [node name="MarchingCube" type="MeshInstance3D"]
 script = ExtResource("1_ntexv")
@@ -22,3 +24,10 @@ spot_angle = 33.0
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.566525, 0.604834, -0.559666, -0.702824, 0.709232, 0.0550332, 0.430219, 0.362169, 0.826889, 0, 0, 0)
+
+[node name="StaticBody3D" type="StaticBody3D" parent="."]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StaticBody3D"]
+shape = SubResource("ConcavePolygonShape3D_ywu50")
+
+[connection signal="dig_signal" from="Camera3D" to="." method="_on_camera_3d_dig_signal"]

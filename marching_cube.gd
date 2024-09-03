@@ -1,5 +1,6 @@
 extends MeshInstance3D
 
+@export var print_times = false
 @export var workgroup_size: int = 8
 @export_range(-1.0, 1.0) var isolevel: float = 0.0
 @export var noise: Noise
@@ -11,6 +12,7 @@ var grid = []
 var rd: RenderingDevice
 var uniform_set: RID
 var pipeline: RID
+var input_buffer: RID
 var counter_buffer: RID
 var counter_bytes_size: int
 var vertices_buffer: RID
@@ -44,7 +46,7 @@ func init_compute():
 
 	# Input
 	var input_bytes = PackedFloat32Array(grid).to_byte_array()
-	var input_buffer = rd.storage_buffer_create(input_bytes.size(), input_bytes)
+	input_buffer = rd.storage_buffer_create(input_bytes.size(), input_bytes)
 
 	var input_uniform = RDUniform.new()
 	input_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
@@ -101,6 +103,7 @@ func run_compute():
 	while true:
 		var start = Time.get_ticks_msec()
 
+		rd.buffer_update(input_buffer, 0, grid.size(), PackedFloat32Array(grid).to_byte_array())
 		rd.buffer_update(counter_buffer, 0, counter_bytes_size, PackedFloat32Array([0]).to_byte_array())
 		rd.buffer_clear(vertices_buffer, 0, output_bytes_size)
 
@@ -114,13 +117,15 @@ func run_compute():
 		rd.sync()
 
 		var mid = Time.get_ticks_msec()
-		print("Compute shader: ", mid - start)
+		if print_times:
+			print("Compute shader: ", mid - start)
 
 		var raw_vertices_bytes = rd.buffer_get_data(vertices_buffer)
 		var raw_normals_bytes = rd.buffer_get_data(normals_buffer)
 		var output_counter = rd.buffer_get_data(counter_buffer).to_int32_array()[0]
 
-		print("num triangles to add:", output_counter)
+		if print_times:
+			print("num triangles to add:", output_counter)
 
 		var vertex_count = output_counter * 3
 
@@ -149,8 +154,9 @@ func run_compute():
 		should_update_mesh = true
 		mutex.unlock()
 
-		print("Vertex/Normals treatment: ", Time.get_ticks_msec() - mid)
-		print("Total compute time: ", Time.get_ticks_msec() - start)
+		if print_times:
+			print("Vertex/Normals treatment: ", Time.get_ticks_msec() - mid)
+			print("Total compute time: ", Time.get_ticks_msec() - start)
 
 func update_mesh():
 	var start = Time.get_ticks_msec()
@@ -162,8 +168,28 @@ func update_mesh():
 	array_mesh.clear_surfaces()
 	array_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, mesh_data)
 
-	print("Mesh creation: ", Time.get_ticks_msec() - start)
+	if print_times:
+		print("Mesh creation: ", Time.get_ticks_msec() - start)
 
+
+func update_collisions():
+	var start = Time.get_ticks_msec()
+
+	# var body = PhysicsServer3D.body_create()
+	# PhysicsServer3D.body_set_mode(body, PhysicsServer3D.BODY_MODE_STATIC)
+	# PhysicsServer3D.body_set_space(body, get_world_3d().space)
+	# PhysicsServer3D.body_set_state(body, PhysicsServer3D.BODY_STATE_TRANSFORM, Transform3D())
+	# PhysicsServer3D.body_set_collision_layer(body, 1)
+	# PhysicsServer3D.body_set_collision_mask(body, 1)
+	# var shape = PhysicsServer3D.concave_polygon_shape_create()
+	# PhysicsServer3D.shape_set_data(shape, {"faces": vertices})
+	# PhysicsServer3D.body_add_shape(body, shape)
+
+	var shape2: CollisionShape3D = $StaticBody3D/CollisionShape3D
+	shape2.shape.set_faces(vertices)
+
+	if print_times:
+		print("Collision creation: ", Time.get_ticks_msec() - start)
 
 func _ready() -> void:
 	array_mesh = ArrayMesh.new()
@@ -182,7 +208,14 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	if should_update_mesh:
 		update_mesh()
-		
+		update_collisions()
+
 		mutex.lock()
 		should_update_mesh = false
 		mutex.unlock()
+
+
+func _on_camera_3d_dig_signal(at: Vector3) -> void:
+	var c = at.round()
+	var dim = resolution * workgroup_size + 1
+	grid[c.z + c.y * dim + c.x * dim * dim] += 0.1

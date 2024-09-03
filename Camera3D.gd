@@ -27,6 +27,8 @@ var _e = false
 var _shift = false
 var _alt = false
 
+signal dig_signal(at: Vector3)
+
 func _input(event):
 	# Receives mouse motion
 	if event is InputEventMouseMotion:
@@ -35,6 +37,8 @@ func _input(event):
 	# Receives mouse button input
 	if event is InputEventMouseButton:
 		match event.button_index:
+			MOUSE_BUTTON_LEFT:
+				dig()
 			MOUSE_BUTTON_RIGHT: # Only allows rotation if right click down
 				Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED if event.pressed else Input.MOUSE_MODE_VISIBLE)
 			MOUSE_BUTTON_WHEEL_UP: # Increases max velocity
@@ -107,3 +111,11 @@ func _update_mouselook():
 	
 		rotate_y(deg_to_rad(-yaw))
 		rotate_object_local(Vector3(1,0,0), deg_to_rad(-pitch))
+
+func dig():
+	var length = 100
+	var query = PhysicsRayQueryParameters3D.create(global_position, global_position-global_transform.basis.z * length)
+	var result = get_world_3d().direct_space_state.intersect_ray(query)
+	
+	if result:
+		dig_signal.emit(result["position"])
