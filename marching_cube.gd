@@ -103,7 +103,8 @@ func run_compute():
 	while true:
 		var start = Time.get_ticks_msec()
 
-		rd.buffer_update(input_buffer, 0, grid.size(), PackedFloat32Array(grid).to_byte_array())
+		var grid_bytes = PackedFloat32Array(grid).to_byte_array()
+		rd.buffer_update(input_buffer, 0, grid_bytes.size(), grid_bytes)
 		rd.buffer_update(counter_buffer, 0, counter_bytes_size, PackedFloat32Array([0]).to_byte_array())
 		rd.buffer_clear(vertices_buffer, 0, output_bytes_size)
 
@@ -216,6 +217,10 @@ func _process(_delta: float) -> void:
 
 
 func _on_camera_3d_dig_signal(at: Vector3) -> void:
+	var radius = 2
 	var c = at.round()
 	var dim = resolution * workgroup_size + 1
-	grid[c.z + c.y * dim + c.x * dim * dim] += 0.1
+	for i in range(max(c.x - radius, 0), min(c.x + radius + 1, dim)):
+		for j in range(max(c.y - radius, 0), min(c.y + radius + 1, dim)):
+			for k in range(max(c.z - radius, 0), min(c.z + radius + 1, dim)):
+				grid[k + j * dim + i * dim * dim] += 0.1
