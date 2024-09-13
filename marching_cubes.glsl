@@ -1,7 +1,7 @@
 #[compute]
 #version 460
 
-layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
 // We create our own coordinate arrangement and do not use vec3
 // because it would be converted to vec4 when we get it in gd script
@@ -27,6 +27,7 @@ struct Normal {
 struct Parameters {
     uint resolution;
     float iso_level;
+    uvec3 offset;  // one corner of the cube where the recalculation happens
 };
 
 // This is the scalar field input
@@ -55,6 +56,7 @@ triangle_normal_buffer;
 layout(set = 0, binding = 3, std430) restrict readonly buffer ParametersBuffer {
     float resolution;
     float iso_level;
+    uvec3 offset;
 }
 parameters;
 
@@ -117,6 +119,7 @@ void main() {
     // This id is gl_WorkGroupID * gl_WorkGroupSize + gl_LocalInvocationID;
     // max(gl_WorkGroupID) = workgroup_size and max(gl_LocalInvocationID) = resolution
     uvec3 id = gl_GlobalInvocationID;
+    id += parameters.offset;
 
     // Calculate the index to use in our lookup tables
     // Refer to the cube drawing to understand the order of corner we choose
