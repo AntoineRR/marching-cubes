@@ -11,9 +11,7 @@ metadata/_preview_in_3d_space_ = true
 
 [node name="MarchingCube" type="Node3D"]
 script = ExtResource("1_ntexv")
-chunks = null
 print_times = true
-isolevel = null
 noise = SubResource("FastNoiseLite_o8xqg")
 
 [node name="Camera3D" type="Camera3D" parent="."]

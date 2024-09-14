@@ -208,35 +208,81 @@ func _ready() -> void:
 				update_mesh(grid_index)
 				update_collisions(grid_index)
 
-func _process(_delta: float) -> void:
-	pass
+
+func voxel_coord_to_chunk_coord(coord: Vector3i) -> Vector3i:
+	return Vector3i(coord / (local_size * workgroup_size))
 
 
-func convert_voxel_coord_to_chunk_index(coord: Vector3) -> int:
-	# Chunks are loacl_size * workgroup_size voxels
-	var chunk_coord = Vector3i(coord / (local_size * workgroup_size * voxel_dimension))
-	return chunk_coord.z + chunk_coord.y*chunks + chunk_coord.x*chunks*chunks
+func chunk_coord_to_chunk_index(chunk_coord: Vector3i) -> int:
+	return chunk_coord.z + chunk_coord.y * chunks + chunk_coord.x * chunks * chunks
+
+
+func point_coord_to_point_coord_in_chunk(point_coord: Vector3i, chunk_coord: Vector3i) -> Vector3i:
+	var min_chunk_point = chunk_coord * local_size * workgroup_size
+	return point_coord - min_chunk_point
+
+
+func point_coord_in_chunk_to_point_index(point_coord_in_chunk: Vector3i) -> int:
+	var chunk_dim = local_size * workgroup_size + 1
+	return point_coord_in_chunk.z + point_coord_in_chunk.y * chunk_dim + point_coord_in_chunk.x * chunk_dim * chunk_dim
+
+
+func point_coord_to_point_position(point_coord: Vector3i) -> Vector3:
+	return point_coord * voxel_dimension
+
+
+func chunk_coord_to_chunk_position(chunk_coord: Vector3i) -> Vector3:
+	return chunk_coord * local_size * workgroup_size * voxel_dimension
+
+
+func modify_grid_point(chunk_coord: Vector3i, point_coord_in_chunk: Vector3i, value_to_add: float):
+	var chunk_index = chunk_coord_to_chunk_index(chunk_coord)
+	var point_index = point_coord_in_chunk_to_point_index(point_coord_in_chunk)
+	grid[chunk_index][point_index] += value_to_add
 
 
 func _on_camera_3d_dig_signal(at: Vector3) -> void:
 	var start_time = Time.get_ticks_msec()
 
-	var radius = 2  # In voxels
-	var c = (at / voxel_dimension).round()
-	var dim = local_size * workgroup_size * chunks + 1
+	var radius = 2
+	var c = Vector3i(at / voxel_dimension)  # Coords of the voxel hit
+	var chunk_dim = local_size * workgroup_size
+	var voxel_dim = chunk_dim * chunks
 	var chunks_to_reload = {}
-	for i in range(max(c.x - radius, 0), min(c.x + radius + 1, dim)):
-		for j in range(max(c.y - radius, 0), min(c.y + radius + 1, dim)):
-			for k in range(max(c.z - radius, 0), min(c.z + radius + 1, dim)):
-				var chunk_index = convert_voxel_coord_to_chunk_index(Vector3(i, j, k))
-				var chunk_dim = local_size * workgroup_size
-				var coords_in_chunk = Vector3(i % chunk_dim, j % chunk_dim, k % chunk_dim)
-				grid[chunk_index][coords_in_chunk.z + coords_in_chunk.y * (chunk_dim + 1) + coords_in_chunk.x * (chunk_dim + 1) * (chunk_dim + 1)] += 0.1
-				var chunk_coord = Vector3i(Vector3(i, j, k) / (local_size * workgroup_size * voxel_dimension))
-				chunks_to_reload[chunk_index] = chunk_coord * local_size * workgroup_size * voxel_dimension
+	var point_coords_to_modify = {}
 
-	for grid_index in chunks_to_reload:
-		run_compute(chunks_to_reload[grid_index], grid_index)
+	# Check every voxel in the radius around the voxel hit
+	for i in range(max(c.x - radius, 0), min(c.x + radius + 1, voxel_dim)):
+		for j in range(max(c.y - radius, 0), min(c.y + radius + 1, voxel_dim)):
+			for k in range(max(c.z - radius, 0), min(c.z + radius + 1, voxel_dim)):
+				var voxel_coord = Vector3i(i, j, k)
+				var chunk_coord = voxel_coord_to_chunk_coord(voxel_coord)
+				# Check all 8 corners of the voxel
+				for point_coord in [
+					Vector3i(voxel_coord.x, voxel_coord.y, voxel_coord.z),
+					Vector3i(voxel_coord.x + 1, voxel_coord.y, voxel_coord.z),
+					Vector3i(voxel_coord.x, voxel_coord.y, voxel_coord.z + 1),
+					Vector3i(voxel_coord.x + 1, voxel_coord.y, voxel_coord.z + 1),
+					Vector3i(voxel_coord.x, voxel_coord.y + 1, voxel_coord.z),
+					Vector3i(voxel_coord.x + 1, voxel_coord.y + 1, voxel_coord.z),
+					Vector3i(voxel_coord.x, voxel_coord.y + 1, voxel_coord.z + 1),
+					Vector3i(voxel_coord.x + 1, voxel_coord.y + 1, voxel_coord.z + 1),
+				]:
+					var point_position = point_coord_to_point_position(point_coord)
+					if point_position.distance_squared_to(at) <= radius * radius:
+						point_coords_to_modify[[point_coord, chunk_coord]] = 0.1
+						chunks_to_reload[chunk_coord] = null
+	
+	for point_info in point_coords_to_modify:
+		var point_coord = point_info[0]
+		var chunk_coord = point_info[1]
+		var value = point_coords_to_modify[point_info]
+		var point_coord_in_chunk = point_coord_to_point_coord_in_chunk(point_coord, chunk_coord)
+		modify_grid_point(chunk_coord, point_coord_in_chunk, value)
+
+	for chunk_coord in chunks_to_reload:
+		var grid_index = chunk_coord_to_chunk_index(chunk_coord)
+		run_compute(chunk_coord_to_chunk_position(chunk_coord), grid_index)
 		update_mesh(grid_index)
 		update_collisions(grid_index)
 	
