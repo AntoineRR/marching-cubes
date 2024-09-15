@@ -27,6 +27,7 @@ var _e = false
 var _shift = false
 var _alt = false
 
+var is_digging = false
 signal dig_signal(at: Vector3)
 
 func _input(event):
@@ -38,7 +39,10 @@ func _input(event):
 	if event is InputEventMouseButton:
 		match event.button_index:
 			MOUSE_BUTTON_LEFT:
-				dig()
+				if event.pressed:
+					is_digging = true
+				else :
+					is_digging = false
 			MOUSE_BUTTON_RIGHT: # Only allows rotation if right click down
 				Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED if event.pressed else Input.MOUSE_MODE_VISIBLE)
 			MOUSE_BUTTON_WHEEL_UP: # Increases max velocity
@@ -66,6 +70,8 @@ func _input(event):
 func _process(delta):
 	_update_mouselook()
 	_update_movement(delta)
+	if is_digging:
+		dig()
 
 # Updates camera movement
 func _update_movement(delta):

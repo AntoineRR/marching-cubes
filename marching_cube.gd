@@ -4,6 +4,7 @@ extends Node3D
 @export var print_times = false
 @export_range(-1.0, 1.0) var isolevel: float = 0.0
 @export var noise: Noise
+@export_range(-0.1, 0.1) var digging_power: float = 0.01
 @export var digging_curve: Curve
 
 const workgroup_size = 2
@@ -272,7 +273,7 @@ func _on_camera_3d_dig_signal(at: Vector3) -> void:
 					var point_position = point_coord_to_point_position(point_coord)
 					var distance = point_position.distance_to(at)
 					if distance <= radius:
-						point_coords_to_modify[[point_coord, chunk_coord]] = 0.1 * digging_curve.sample_baked(distance / radius)
+						point_coords_to_modify[[point_coord, chunk_coord]] = digging_power * digging_curve.sample_baked(distance / radius)
 						chunks_to_reload[chunk_coord] = null
 	
 	for point_info in point_coords_to_modify:
