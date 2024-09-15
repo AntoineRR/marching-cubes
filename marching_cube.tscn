@@ -16,7 +16,6 @@ point_count = 3
 [node name="MarchingCube" type="Node3D"]
 script = ExtResource("1_ntexv")
 noise = SubResource("FastNoiseLite_o8xqg")
-digging_power = 0.001
 digging_curve = SubResource("Curve_gkneq")
 
 [node name="Camera3D" type="Camera3D" parent="."]

@@ -127,8 +127,6 @@ void main() {
     uvec3 id = gl_GlobalInvocationID;
     vec3 voxel_coord = vec3(parameters.offset_x, parameters.offset_y, parameters.offset_z) + (vec3(id) * parameters.voxel_dimension);
 
-    // Calculate the index to use in our lookup tables
-    // Refer to the cube drawing to understand the order of corner we choose
     vec4 cube_corners[] = {
         vec4(corner_position[0] * parameters.voxel_dimension, get_noise_value(id.x, id.y, id.z)),
         vec4(corner_position[1] * parameters.voxel_dimension, get_noise_value(id.x+1, id.y, id.z)),
@@ -140,6 +138,8 @@ void main() {
         vec4(corner_position[7] * parameters.voxel_dimension, get_noise_value(id.x, id.y+1, id.z+1)),
     };
 
+    // Calculate the index to use in our lookup tables
+    // Refer to the cube drawing to understand the order of corner we choose
     uint cube_index = 0;
     for (uint i = 0; i < 8; i++) {
         if (cube_corners[i].w > parameters.iso_level) cube_index |= 1 << i;

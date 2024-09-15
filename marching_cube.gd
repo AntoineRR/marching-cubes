@@ -2,6 +2,7 @@ extends Node3D
 
 @export var chunks: int = 8
 @export var print_times = false
+@export var print_triangles_number = false
 @export_range(-1.0, 1.0) var isolevel: float = 0.0
 @export var noise: Noise
 @export_range(0.0, 5.0) var voxel_dimension: float = 1.0
@@ -125,7 +126,7 @@ func run_compute(offset: Vector3, grid_index: int):
 	var raw_normals_bytes = rd.buffer_get_data(normals_buffer)
 	var output_counter = rd.buffer_get_data(counter_buffer).to_int32_array()[0]
 
-	if print_times:
+	if print_triangles_number:
 		print("num triangles to add:", output_counter)
 
 	var vertex_count = output_counter * 3
@@ -164,16 +165,6 @@ func update_mesh(mesh_index: int):
 
 
 func update_collisions(grid_index: int):
-	# var body = PhysicsServer3D.body_create()
-	# PhysicsServer3D.body_set_mode(body, PhysicsServer3D.BODY_MODE_STATIC)
-	# PhysicsServer3D.body_set_space(body, get_world_3d().space)
-	# PhysicsServer3D.body_set_state(body, PhysicsServer3D.BODY_STATE_TRANSFORM, Transform3D())
-	# PhysicsServer3D.body_set_collision_layer(body, 1)
-	# PhysicsServer3D.body_set_collision_mask(body, 1)
-	# var shape = PhysicsServer3D.concave_polygon_shape_create()
-	# PhysicsServer3D.shape_set_data(shape, {"faces": vertices})
-	# PhysicsServer3D.body_add_shape(body, shape)
-
 	collisions[grid_index].shape.set_faces(vertices)
 
 func _ready() -> void:
