@@ -4,6 +4,7 @@ extends Node3D
 @export var print_times = false
 @export_range(-1.0, 1.0) var isolevel: float = 0.0
 @export var noise: Noise
+@export var digging_curve: Curve
 
 const workgroup_size = 2
 const local_size = 4   # To update this, also update the local size in the marching cube shader
@@ -269,8 +270,9 @@ func _on_camera_3d_dig_signal(at: Vector3) -> void:
 					Vector3i(voxel_coord.x + 1, voxel_coord.y + 1, voxel_coord.z + 1),
 				]:
 					var point_position = point_coord_to_point_position(point_coord)
-					if point_position.distance_squared_to(at) <= radius * radius:
-						point_coords_to_modify[[point_coord, chunk_coord]] = 0.1
+					var distance = point_position.distance_to(at)
+					if distance <= radius:
+						point_coords_to_modify[[point_coord, chunk_coord]] = 0.1 * digging_curve.sample_baked(distance / radius)
 						chunks_to_reload[chunk_coord] = null
 	
 	for point_info in point_coords_to_modify:
