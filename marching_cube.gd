@@ -4,12 +4,13 @@ extends Node3D
 @export var print_times = false
 @export_range(-1.0, 1.0) var isolevel: float = 0.0
 @export var noise: Noise
+@export_range(0.0, 5.0) var voxel_dimension: float = 1.0
 @export_range(-0.1, 0.1) var digging_power: float = 0.01
+@export_range(0.0, 10.0) var digging_radius: float = 2.0
 @export var digging_curve: Curve
 
 const workgroup_size = 2
 const local_size = 4   # To update this, also update the local size in the marching cube shader
-const voxel_dimension = 1   # Cubes have a voxel_dimension x voxel_dimension x voxel_dimension size
 
 var grid = []
 
@@ -79,7 +80,7 @@ func init_compute():
 	normals_uniform.add_id(normals_buffer)
 
 	# Parameters
-	var parameters_bytes = PackedFloat32Array([local_size, isolevel, 0]).to_byte_array()
+	var parameters_bytes = PackedFloat32Array([local_size, isolevel, 0, 0, 0, voxel_dimension]).to_byte_array()
 	parameters_buffer = rd.storage_buffer_create(parameters_bytes.size(), parameters_bytes)
 
 	var parameters_uniform = RDUniform.new()
@@ -108,7 +109,7 @@ func run_compute(offset: Vector3, grid_index: int):
 	var grid_bytes = PackedFloat32Array(grid[grid_index]).to_byte_array()
 	rd.buffer_update(input_buffer, 0, grid_bytes.size(), grid_bytes)
 	rd.buffer_update(counter_buffer, 0, 4, PackedFloat32Array([0]).to_byte_array())
-	rd.buffer_update(parameters_buffer, 8, 4, PackedVector3Array([offset]).to_byte_array())
+	rd.buffer_update(parameters_buffer, 8, 12, PackedVector3Array([offset.x, offset.y, offset.z]).to_byte_array())
 	rd.buffer_clear(vertices_buffer, 0, output_bytes_size)
 
 	var compute_list = rd.compute_list_begin()
@@ -246,7 +247,7 @@ func modify_grid_point(chunk_coord: Vector3i, point_coord_in_chunk: Vector3i, va
 func _on_camera_3d_dig_signal(at: Vector3) -> void:
 	var start_time = Time.get_ticks_msec()
 
-	var radius = 2
+	var cube_extent = round(digging_radius / voxel_dimension + 0.5)
 	var c = Vector3i(at / voxel_dimension)  # Coords of the voxel hit
 	var chunk_dim = local_size * workgroup_size
 	var voxel_dim = chunk_dim * chunks
@@ -254,9 +255,9 @@ func _on_camera_3d_dig_signal(at: Vector3) -> void:
 	var point_coords_to_modify = {}
 
 	# Check every voxel in the radius around the voxel hit
-	for i in range(max(c.x - radius, 0), min(c.x + radius + 1, voxel_dim)):
-		for j in range(max(c.y - radius, 0), min(c.y + radius + 1, voxel_dim)):
-			for k in range(max(c.z - radius, 0), min(c.z + radius + 1, voxel_dim)):
+	for i in range(max(c.x - cube_extent, 0), min(c.x + cube_extent + 1, voxel_dim)):
+		for j in range(max(c.y - cube_extent, 0), min(c.y + cube_extent + 1, voxel_dim)):
+			for k in range(max(c.z - cube_extent, 0), min(c.z + cube_extent + 1, voxel_dim)):
 				var voxel_coord = Vector3i(i, j, k)
 				var chunk_coord = voxel_coord_to_chunk_coord(voxel_coord)
 				# Check all 8 corners of the voxel
@@ -272,8 +273,8 @@ func _on_camera_3d_dig_signal(at: Vector3) -> void:
 				]:
 					var point_position = point_coord_to_point_position(point_coord)
 					var distance = point_position.distance_to(at)
-					if distance <= radius:
-						point_coords_to_modify[[point_coord, chunk_coord]] = digging_power * digging_curve.sample_baked(distance / radius)
+					if distance <= digging_radius:
+						point_coords_to_modify[[point_coord, chunk_coord]] = digging_power * digging_curve.sample_baked(distance / digging_radius)
 						chunks_to_reload[chunk_coord] = null
 	
 	for point_info in point_coords_to_modify:

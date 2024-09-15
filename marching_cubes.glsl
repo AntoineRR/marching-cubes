@@ -25,9 +25,12 @@ struct Normal {
 };
 
 struct Parameters {
-    uint resolution;
+    uint local_size;
     float iso_level;
-    uvec3 offset;  // one corner of the cube where the recalculation happens
+    float offset_x;
+    float offset_y;
+    float offset_z;
+    float voxel_dimension;
 };
 
 // This is the scalar field input
@@ -54,9 +57,12 @@ triangle_normal_buffer;
 
 // These are the parameters of our calculation
 layout(set = 0, binding = 3, std430) restrict readonly buffer ParametersBuffer {
-    float resolution;
+    float local_size;
     float iso_level;
-    uvec3 offset;
+    float offset_x;
+    float offset_y;
+    float offset_z;
+    float voxel_dimension;
 }
 parameters;
 
@@ -105,7 +111,7 @@ const vec2 corners_by_edge[] = {
 
 float get_noise_value(uint x, uint y, uint z) {
     // Needs to be the same as in the sample_noise method from the gd script
-    uint r = uint(parameters.resolution) * gl_NumWorkGroups.x + 1;
+    uint r = uint(parameters.local_size) * gl_NumWorkGroups.x + 1;
     return density_field_buffer.data[z + y*r + x*r*r];
 }
 
@@ -117,21 +123,21 @@ vec3 interpolate_between(vec4 a, vec4 b) {
 
 void main() {
     // This id is gl_WorkGroupID * gl_WorkGroupSize + gl_LocalInvocationID;
-    // max(gl_WorkGroupID) = workgroup_size and max(gl_LocalInvocationID) = resolution
+    // max(gl_WorkGroupID) = workgroup_size and max(gl_LocalInvocationID) = local_size
     uvec3 id = gl_GlobalInvocationID;
-    id += parameters.offset;
+    vec3 voxel_coord = vec3(parameters.offset_x, parameters.offset_y, parameters.offset_z) + (vec3(id) * parameters.voxel_dimension);
 
     // Calculate the index to use in our lookup tables
     // Refer to the cube drawing to understand the order of corner we choose
     vec4 cube_corners[] = {
-        vec4(-0.5, -0.5, -0.5, get_noise_value(id.x, id.y, id.z)),
-        vec4(0.5, -0.5, -0.5, get_noise_value(id.x+1, id.y, id.z)),
-        vec4(0.5, -0.5, 0.5, get_noise_value(id.x+1, id.y, id.z+1)),
-        vec4(-0.5, -0.5, 0.5, get_noise_value(id.x, id.y, id.z+1)),
-        vec4(-0.5, 0.5, -0.5, get_noise_value(id.x, id.y+1, id.z)),
-        vec4(0.5, 0.5, -0.5, get_noise_value(id.x+1, id.y+1, id.z)),
-        vec4(0.5, 0.5, 0.5, get_noise_value(id.x+1, id.y+1, id.z+1)),
-        vec4(-0.5, 0.5, 0.5, get_noise_value(id.x, id.y+1, id.z+1)),
+        vec4(corner_position[0] * parameters.voxel_dimension, get_noise_value(id.x, id.y, id.z)),
+        vec4(corner_position[1] * parameters.voxel_dimension, get_noise_value(id.x+1, id.y, id.z)),
+        vec4(corner_position[2] * parameters.voxel_dimension, get_noise_value(id.x+1, id.y, id.z+1)),
+        vec4(corner_position[3] * parameters.voxel_dimension, get_noise_value(id.x, id.y, id.z+1)),
+        vec4(corner_position[4] * parameters.voxel_dimension, get_noise_value(id.x, id.y+1, id.z)),
+        vec4(corner_position[5] * parameters.voxel_dimension, get_noise_value(id.x+1, id.y+1, id.z)),
+        vec4(corner_position[6] * parameters.voxel_dimension, get_noise_value(id.x+1, id.y+1, id.z+1)),
+        vec4(corner_position[7] * parameters.voxel_dimension, get_noise_value(id.x, id.y+1, id.z+1)),
     };
 
     uint cube_index = 0;
@@ -141,7 +147,7 @@ void main() {
 
     uint offset = offsets[cube_index];
     uint index_length = lengths[cube_index];
-    vec3 world_pos = vec3(id.x + 0.5, id.y + 0.5, id.z + 0.5);
+    vec3 world_pos = voxel_coord + (vec3(0.5, 0.5, 0.5) * parameters.voxel_dimension);
 
     for (int i = 0; i < index_length; i += 3) {
         Triangle t;
